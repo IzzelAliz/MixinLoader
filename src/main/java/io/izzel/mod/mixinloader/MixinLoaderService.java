@@ -153,7 +153,7 @@ public class MixinLoaderService implements ITransformationService {
     }
 
     private static void addClassesToClassloader() throws Exception {
-        extract("mixin-0.8-SNAPSHOT.jar", "./libraries/org/spongepowered/mixin/0.8-SNAPSHOT/mixin-0.8-SNAPSHOT.jar");
+        extract("mixin-0.8.jar", "./libraries/org/spongepowered/mixin/0.8/mixin-0.8.jar");
         extract("asm-util-7.2.jar", "./libraries/org/ow2/asm/asm-util/7.2/asm-util-7.2.jar");
         extract("asm-analysis-7.2.jar", "./libraries/org/ow2/asm/asm-analysis/7.2/asm-analysis-7.2.jar");
     }

@@ -20,7 +20,7 @@ configurations {
 }
 
 dependencies {
-    embedFile 'org.spongepowered:mixin:0.8-SNAPSHOT'
+    embed 'org.spongepowered:mixin:0.8'
     embed 'org.ow2.asm:asm-analysis:7.2'
     embed 'org.ow2.asm:asm-util:7.2'
     compile 'cpw.mods:modlauncher:5.0.0-milestone.4'
@@ -29,13 +29,5 @@ dependencies {
 }
 
 jar {
-    /*
-    from configurations.embedFile.collect {
-        it.isDirectory() ? it : zipTree(it).matching {
-            exclude '**///META-INF/**'
-     //   }
-  //  }
-
     from configurations.embed.collect()
-    from configurations.embedFile.collect()
 }
