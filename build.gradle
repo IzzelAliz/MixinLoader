@@ -1,0 +1,41 @@
+plugins {
+    id 'java'
+}
+
+group 'io.izzel.mod'
+version '1.0-SNAPSHOT'
+
+sourceCompatibility = 1.8
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://files.minecraftforge.net/maven' }
+    maven { url = 'https://repo.spongepowered.org/maven' }
+}
+
+configurations {
+    embed
+    emdebFile
+    compile.extendsFrom(embed, embedFile)
+}
+
+dependencies {
+    embedFile 'org.spongepowered:mixin:0.8-SNAPSHOT'
+    embed 'org.ow2.asm:asm-analysis:7.2'
+    embed 'org.ow2.asm:asm-util:7.2'
+    compile 'cpw.mods:modlauncher:5.0.0-milestone.4'
+    compile 'cpw.mods:grossjava9hacks:1.1.0'
+    compile group: 'net.sf.jopt-simple', name: 'jopt-simple', version: '5.0.4'
+}
+
+jar {
+    /*
+    from configurations.embedFile.collect {
+        it.isDirectory() ? it : zipTree(it).matching {
+            exclude '**///META-INF/**'
+     //   }
+  //  }
+
+    from configurations.embed.collect()
+    from configurations.embedFile.collect()
+}
