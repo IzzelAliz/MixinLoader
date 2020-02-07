@@ -7,8 +7,12 @@ import cpw.mods.modlauncher.api.ITransformationService;
 import cpw.mods.modlauncher.api.ITransformer;
 import cpw.mods.modlauncher.serviceapi.ILaunchPluginService;
 import joptsimple.OptionSpecBuilder;
+import sun.misc.Unsafe;
 
 import java.io.*;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.URL;
@@ -27,28 +31,26 @@ public class MixinLoaderService implements ITransformationService {
 
     private static PrintStream out = new PrintStream(new FileOutputStream(FileDescriptor.out));
 
-    private static boolean addURLAvailable = true;
-    private static Method addURL;
-    private static Method defineClass;
+    private static MethodHandles.Lookup lookup;
+    private static Unsafe UNSAFE;
 
     static {
-        out.println("MixinLoader by IzzelAliz");
+        out.println("MixinLoader 1.1 by IzzelAliz");
         try {
-            addURL = URLClassLoader.class.getDeclaredMethod("addURL", URL.class);
-            addURL.setAccessible(true);
-        } catch (NoSuchMethodException e) {
-            addURLAvailable = false;
-            try {
-                defineClass = ClassLoader.class.getDeclaredMethod("defineClass", String.class, byte[].class, int.class, int.class);
-                defineClass.setAccessible(true);
-            } catch (NoSuchMethodException e1) {
-                e1.printStackTrace();
-            }
+            Field field = Unsafe.class.getDeclaredField("theUnsafe");
+            field.setAccessible(true);
+            UNSAFE = (Unsafe) field.get(null);
+            Field lookupField = MethodHandles.Lookup.class.getDeclaredField("IMPL_LOOKUP");
+            Object lookupBase = UNSAFE.staticFieldBase(lookupField);
+            long lookupOffset = UNSAFE.staticFieldOffset(lookupField);
+            lookup = (MethodHandles.Lookup) UNSAFE.getObject(lookupBase, lookupOffset);
+        } catch (Throwable t) {
+            t.printStackTrace();
         }
         try {
             addClassesToClassloader();
             out.println("Successfully add Mixin to classpath!");
-        } catch (Exception e) {
+        } catch (Throwable e) {
             e.printStackTrace();
         }
         try {
@@ -125,7 +127,7 @@ public class MixinLoaderService implements ITransformationService {
         return new ArrayList<>();
     }
 
-    private static void extract(String name, String target) throws Exception {
+    private static void extract(String name, String target) throws Throwable {
         Path path = Paths.get(target);
         if (Files.notExists(path)) {
             Files.createDirectories(path.getParent());
@@ -152,26 +154,18 @@ public class MixinLoaderService implements ITransformationService {
         }
     }
 
-    private static void addClassesToClassloader() throws Exception {
+    private static void addClassesToClassloader() throws Throwable {
         extract("mixin-0.8.jar", "./libraries/org/spongepowered/mixin/0.8/mixin-0.8.jar");
         extract("asm-util-7.2.jar", "./libraries/org/ow2/asm/asm-util/7.2/asm-util-7.2.jar");
         extract("asm-analysis-7.2.jar", "./libraries/org/ow2/asm/asm-analysis/7.2/asm-analysis-7.2.jar");
     }
 
-    private static void load(String file, ClassLoader loader) throws Exception {
-        if (addURLAvailable) {
-            URL url = Paths.get(file).toUri().toURL();
-            addURL.invoke(loader, url);
-        }
-    }
-
-    private static Class<?> defineClass(ClassLoader loader, String name, byte[] buf) {
-        try {
-            return (Class<?>) defineClass.invoke(loader, name, buf, 0, buf.length);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return null;
-        }
+    private static void load(String file, ClassLoader loader) throws Throwable {
+            Field ucp = loader.getClass().getDeclaredField("ucp");
+            long ucpOffset = UNSAFE.objectFieldOffset(ucp);
+            Object urlClassPath = UNSAFE.getObject(loader, ucpOffset);
+            MethodHandle methodHandle = lookup.findVirtual(urlClassPath.getClass(), "addURL", MethodType.methodType(void.class, java.net.URL.class));
+            methodHandle.invoke(urlClassPath, Paths.get(file).toUri().toURL());
     }
 
 }
