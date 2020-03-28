@@ -1,6 +1,6 @@
 # MixinLoader
 
-Add a mixin environment to ModLoader using tricky hacks.
+Add a mixin environment to ModLauncher using tricky hacks.
 
 ## How to use
 
