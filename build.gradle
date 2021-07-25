@@ -3,9 +3,9 @@ plugins {
 }
 
 group 'io.izzel.mod'
-version '1.1-SNAPSHOT'
+version '1.2-SNAPSHOT'
 
-sourceCompatibility = 1.8
+java.toolchain.languageVersion = JavaLanguageVersion.of(16)
 
 repositories {
     mavenCentral()
@@ -16,16 +16,16 @@ repositories {
 configurations {
     embed
     emdebFile
-    compile.extendsFrom(embed, embedFile)
+    implementation.extendsFrom(embed, embedFile)
 }
 
 dependencies {
-    embed 'org.spongepowered:mixin:0.8'
-    embed 'org.ow2.asm:asm-analysis:7.2'
-    embed 'org.ow2.asm:asm-util:7.2'
-    compile 'cpw.mods:modlauncher:5.0.0-milestone.4'
-    compile 'cpw.mods:grossjava9hacks:1.1.0'
-    compile group: 'net.sf.jopt-simple', name: 'jopt-simple', version: '5.0.4'
+    embed 'org.spongepowered:mixin:0.8.3'
+    implementation 'cpw.mods:modlauncher:9.0.7'
+    implementation 'cpw.mods:grossjava9hacks:1.1.0'
+    implementation group: 'net.sf.jopt-simple', name: 'jopt-simple', version: '5.0.4'
+    implementation "cpw.mods:securejarhandler:0.9.46"
+    implementation "cpw.mods:bootstraplauncher:0.1.15"
 }
 
 jar {

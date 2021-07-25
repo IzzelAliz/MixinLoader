@@ -1,41 +1,57 @@
 package io.izzel.mod.mixinloader;
 
+import cpw.mods.cl.JarModuleFinder;
+import cpw.mods.cl.ModuleClassLoader;
+import cpw.mods.jarhandling.SecureJar;
+import cpw.mods.jarhandling.impl.Jar;
 import cpw.mods.modlauncher.LaunchPluginHandler;
 import cpw.mods.modlauncher.Launcher;
 import cpw.mods.modlauncher.api.IEnvironment;
+import cpw.mods.modlauncher.api.ILaunchHandlerService;
+import cpw.mods.modlauncher.api.IModuleLayerManager;
+import cpw.mods.modlauncher.api.INameMappingService;
 import cpw.mods.modlauncher.api.ITransformationService;
 import cpw.mods.modlauncher.api.ITransformer;
+import cpw.mods.modlauncher.api.TypesafeMap;
 import cpw.mods.modlauncher.serviceapi.ILaunchPluginService;
 import joptsimple.OptionSpecBuilder;
 import sun.misc.Unsafe;
 
-import java.io.*;
-import java.lang.invoke.MethodHandle;
+import java.io.FileDescriptor;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.PrintStream;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.lang.module.Configuration;
+import java.lang.module.ModuleFinder;
+import java.lang.module.ResolvedModule;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.net.URL;
-import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 
 @SuppressWarnings("unchecked")
 public class MixinLoaderService implements ITransformationService {
 
-    private static PrintStream out = new PrintStream(new FileOutputStream(FileDescriptor.out));
+    private static final PrintStream out = new PrintStream(new FileOutputStream(FileDescriptor.out));
 
-    private static MethodHandles.Lookup lookup;
-    private static Unsafe UNSAFE;
+    static MethodHandles.Lookup LOOKUP;
+    static Unsafe UNSAFE;
+    private static ILaunchPluginService plugin;
 
     static {
-        out.println("MixinLoader 1.1 by IzzelAliz");
+        out.println("MixinLoader 1.2 by IzzelAliz");
         try {
             Field field = Unsafe.class.getDeclaredField("theUnsafe");
             field.setAccessible(true);
@@ -43,7 +59,7 @@ public class MixinLoaderService implements ITransformationService {
             Field lookupField = MethodHandles.Lookup.class.getDeclaredField("IMPL_LOOKUP");
             Object lookupBase = UNSAFE.staticFieldBase(lookupField);
             long lookupOffset = UNSAFE.staticFieldOffset(lookupField);
-            lookup = (MethodHandles.Lookup) UNSAFE.getObject(lookupBase, lookupOffset);
+            LOOKUP = (MethodHandles.Lookup) UNSAFE.getObject(lookupBase, lookupOffset);
         } catch (Throwable t) {
             t.printStackTrace();
         }
@@ -61,7 +77,8 @@ public class MixinLoaderService implements ITransformationService {
             Field plugins = LaunchPluginHandler.class.getDeclaredField("plugins");
             plugins.setAccessible(true);
             Map<String, ILaunchPluginService> map = (Map<String, ILaunchPluginService>) plugins.get(handler);
-            map.put("mixin", (ILaunchPluginService) Class.forName("org.spongepowered.asm.launch.MixinLaunchPlugin").newInstance());
+            plugin = (ILaunchPluginService) Class.forName("org.spongepowered.asm.launch.MixinLaunchPlugin").getConstructor().newInstance();
+            map.put("mixin", new MixinLoaderLaunchPlugin(plugin));
             out.println("Successfully inject MixinLaunchPlugin!");
         } catch (Exception e) {
             e.printStackTrace();
@@ -70,7 +87,7 @@ public class MixinLoaderService implements ITransformationService {
 
     public MixinLoaderService() {
         try {
-            delegate = Class.forName("org.spongepowered.asm.launch.MixinTransformationService").newInstance();
+            delegate = Class.forName("org.spongepowered.asm.launch.MixinTransformationService").getConstructor().newInstance();
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -108,14 +125,43 @@ public class MixinLoaderService implements ITransformationService {
     public void initialize(IEnvironment environment) {
         try {
             Method initialize = delegate.getClass().getDeclaredMethod("initialize", IEnvironment.class);
-            initialize.invoke(delegate, environment);
+            initialize.invoke(delegate, new IEnvironment() {
+                @Override
+                public <T> Optional<T> getProperty(TypesafeMap.Key<T> key) {
+                    return environment.getProperty(key);
+                }
+
+                @Override
+                public <T> T computePropertyIfAbsent(TypesafeMap.Key<T> key, Function<? super TypesafeMap.Key<T>, ? extends T> valueFunction) {
+                    return environment.computePropertyIfAbsent(key, valueFunction);
+                }
+
+                @Override
+                public Optional<ILaunchPluginService> findLaunchPlugin(String name) {
+                    if (name.equals("mixin")) {
+                        return Optional.of(plugin);
+                    }
+                    return environment.findLaunchPlugin(name);
+                }
+
+                @Override
+                public Optional<ILaunchHandlerService> findLaunchHandler(String name) {
+                    return environment.findLaunchHandler(name);
+                }
+
+                @Override
+                public Optional<IModuleLayerManager> findModuleLayerManager() {
+                    return environment.findModuleLayerManager();
+                }
+
+                @Override
+                public Optional<BiFunction<INameMappingService.Domain, String, String>> findNameMapping(String targetMapping) {
+                    return environment.findNameMapping(targetMapping);
+                }
+            });
         } catch (Exception e) {
             e.printStackTrace();
         }
-    }
-
-    @Override
-    public void beginScanning(IEnvironment environment) {
     }
 
     @Override
@@ -127,7 +173,7 @@ public class MixinLoaderService implements ITransformationService {
         return new ArrayList<>();
     }
 
-    private static void extract(String name, String target) throws Throwable {
+    private static Path extract(String name, String target) throws Throwable {
         Path path = Paths.get(target);
         if (Files.notExists(path)) {
             Files.createDirectories(path.getParent());
@@ -140,7 +186,7 @@ public class MixinLoaderService implements ITransformationService {
                 outputStream.close();
             }
         }
-        load(target, ITransformationService.class.getClassLoader());
+        return path;
     }
 
     private static void copy(InputStream from, OutputStream to) throws IOException {
@@ -155,17 +201,32 @@ public class MixinLoaderService implements ITransformationService {
     }
 
     private static void addClassesToClassloader() throws Throwable {
-        extract("mixin-0.8.jar", "./libraries/org/spongepowered/mixin/0.8/mixin-0.8.jar");
-        extract("asm-util-7.2.jar", "./libraries/org/ow2/asm/asm-util/7.2/asm-util-7.2.jar");
-        extract("asm-analysis-7.2.jar", "./libraries/org/ow2/asm/asm-analysis/7.2/asm-analysis-7.2.jar");
+        load(new Path[]{
+            extract("mixin-0.8.3.jar", "./libraries/org/spongepowered/mixin/0.8.3/mixin-0.8.3.jar")
+        });
     }
 
-    private static void load(String file, ClassLoader loader) throws Throwable {
-            Field ucp = loader.getClass().getDeclaredField("ucp");
-            long ucpOffset = UNSAFE.objectFieldOffset(ucp);
-            Object urlClassPath = UNSAFE.getObject(loader, ucpOffset);
-            MethodHandle methodHandle = lookup.findVirtual(urlClassPath.getClass(), "addURL", MethodType.methodType(void.class, java.net.URL.class));
-            methodHandle.invoke(urlClassPath, Paths.get(file).toUri().toURL());
+    private static void load(Path[] file) throws Throwable {
+        var classLoader = (ModuleClassLoader) MixinLoaderService.class.getClassLoader();
+        var fallbackField = ModuleClassLoader.class.getDeclaredField("fallbackClassLoader");
+        var fallback = UNSAFE.getObject(classLoader, UNSAFE.objectFieldOffset(fallbackField));
+        var secureJar = SecureJar.from(file);
+        var configurationField = ModuleClassLoader.class.getDeclaredField("configuration");
+        var confOffset = UNSAFE.objectFieldOffset(configurationField);
+        var oldConf = (Configuration) UNSAFE.getObject(fallback, confOffset);
+        var conf = oldConf.resolveAndBind(JarModuleFinder.of(secureJar), ModuleFinder.of(), List.of(secureJar.name()));
+        UNSAFE.putObjectVolatile(fallback, confOffset, conf);
+        var pkgField = ModuleClassLoader.class.getDeclaredField("packageLookup");
+        var packageLookup = (Map<String, ResolvedModule>) UNSAFE.getObject(fallback, UNSAFE.objectFieldOffset(pkgField));
+        var rootField = ModuleClassLoader.class.getDeclaredField("resolvedRoots");
+        var resolvedRoots = (Map<String, Object>) UNSAFE.getObject(fallback, UNSAFE.objectFieldOffset(rootField));
+        var moduleRefCtor = LOOKUP.findConstructor(Class.forName("cpw.mods.cl.JarModuleFinder$JarModuleReference"),
+            MethodType.methodType(void.class, Jar.class));
+        for (var mod : conf.modules()) {
+            for (var pk : mod.reference().descriptor().packages()) {
+                packageLookup.put(pk, mod);
+            }
+            resolvedRoots.put(mod.name(), moduleRefCtor.invokeWithArguments(secureJar));
+        }
     }
-
 }
